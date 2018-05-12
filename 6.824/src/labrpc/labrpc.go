@@ -137,6 +137,7 @@ func MakeNetwork() *Network {
 	// single goroutine to handle all ClientEnd.Call()s
 	go func() {
 		for xreq := range rn.endCh {
+			// 对于每一个客户端和服务端之间的请求回复，都会启动一个goroutine处理
 			go rn.ProcessReq(xreq)
 		}
 	}()
