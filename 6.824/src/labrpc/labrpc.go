@@ -56,7 +56,10 @@ import "log"
 import "strings"
 import "math/rand"
 import "time"
-
+// 数据流转流程
+// ClientEnd ---(req)---> NetWork ----(req)----> Server
+// ClientEnd <--(rep)---- NetWork <---(rep)----- Server
+// 通过NetWork中转请求和回复，从而可以模拟请求延迟，丢失等各种异常情况
 // RPC请求消息
 type reqMsg struct {
 	endname  interface{}  	// name of sending ClientEnd
@@ -75,7 +78,7 @@ type replyMsg struct {
 // 端点
 type ClientEnd struct {
 	endname interface{} 	// this end-point's name
-	ch      chan reqMsg 	// copy of Network.endCh
+	ch      chan reqMsg 	// copy of Network.endCh 这个Channel就是NetWork接收请求的Channel
 }
 
 // send an RPC, wait for the reply.
@@ -128,10 +131,10 @@ type Network struct {
 func MakeNetwork() *Network {
 	rn := &Network{}
 	rn.reliable = true					// 默认网络是可靠的，不可靠只是在发生回应的时候随机延迟一段时间和随机放弃请求包
-	rn.ends = map[interface{}]*ClientEnd{}			// 存在于这个网络的端点
-	rn.enabled = map[interface{}]bool{}			// by end name ???
-	rn.servers = map[interface{}]*Server{}			// servers, by name ??
-	rn.connections = map[interface{}](interface{}){}	// 客户端和服务端之间的连接关系
+	rn.ends = map[interface{}]*ClientEnd{}			// 网络中的客户端
+	rn.enabled = map[interface{}]bool{}			// by end name ??? 判断客户端是否存活
+	rn.servers = map[interface{}]*Server{}			// 网络中的服务端
+	rn.connections = map[interface{}](interface{}){}	// 客户端 ----> 服务端 之间的连接关系
 	rn.endCh = make(chan reqMsg)				//
 
 	// single goroutine to handle all ClientEnd.Call()s
@@ -196,17 +199,20 @@ func (rn *Network) IsServerDead(endname interface{}, servername interface{}, ser
 
 // 处理ClientEnd.Call(),每一个Call都在一个单独的goroutine中处理
 func (rn *Network) ProcessReq(req reqMsg) {
+
+	// 根据 客户端名(endname)查找对应的服务端信息
 	enabled, servername, server, reliable, longreordering := rn.ReadEndnameInfo(req.endname)
 
 	if enabled && servername != nil && server != nil {
 		if reliable == false {
-			// 模拟延迟
+			// 模拟延迟，随机等待一段时间
 			ms := (rand.Int() % 27)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
 
 		if reliable == false && (rand.Int()%1000) < 100 {
 			// drop the request, return as if timeout
+			// 模拟发送给服务端请求丢失, 以超时的情况返回
 			req.replyCh <- replyMsg{false, nil}
 			return
 		}
@@ -215,6 +221,7 @@ func (rn *Network) ProcessReq(req reqMsg) {
 		// in a separate thread so that we can periodically check
 		// if the server has been killed and the RPC should get a
 		// failure reply.
+		// 让服务端去执行请求，并接收服务端的回复(服务端回复发送到ech)
 		ech := make(chan replyMsg)
 		go func() {
 			r := server.dispatch(req)  // 分发请求
@@ -253,9 +260,11 @@ func (rn *Network) ProcessReq(req reqMsg) {
 			req.replyCh <- replyMsg{false, nil}
 		} else if reliable == false && (rand.Int()%1000) < 100 {
 			// drop the reply, return as if timeout
+			// 模拟回复给客户端数据丢失
 			req.replyCh <- replyMsg{false, nil}
 		} else if longreordering == true && rand.Intn(900) < 600 {
 			// delay the response for a while
+			// 模拟回复耗时
 			ms := 200 + rand.Intn(1+rand.Intn(2000))
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 			req.replyCh <- reply
