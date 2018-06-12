@@ -426,11 +426,13 @@ type Service struct {
 
 func MakeService(rcvr interface{}) *Service {
 	svc := &Service{}
+	// 利用反射获取对象的实际类型
 	svc.typ = reflect.TypeOf(rcvr)
 	svc.rcvr = reflect.ValueOf(rcvr)
 	svc.name = reflect.Indirect(svc.rcvr).Type().Name()
 	svc.methods = map[string]reflect.Method{}
 
+	// 根据对象的函数表, 并填充Service对象
 	for m := 0; m < svc.typ.NumMethod(); m++ {
 		method := svc.typ.Method(m)
 		mtype := method.Type
@@ -438,7 +440,9 @@ func MakeService(rcvr interface{}) *Service {
 
 		//fmt.Printf("%v pp %v ni %v 1k %v 2k %v no %v\n",
 		//	mname, method.PkgPath, mtype.NumIn(), mtype.In(1).Kind(), mtype.In(2).Kind(), mtype.NumOut())
-
+		
+		// 如果方法的包名不为空 or 方法参数数量不为3 or
+		// 第二个参数类型不是 Ptr  or 返回的参数数量不为0
 		if method.PkgPath != "" || // capitalized?
 			mtype.NumIn() != 3 ||
 			//mtype.In(1).Kind() != reflect.Ptr ||
